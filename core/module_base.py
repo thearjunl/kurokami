@@ -25,6 +25,16 @@ class KurokamiModule(abc.ABC):
         """JSON function call schema for the AI agentic loop to invoke this module"""
         pass
 
+    @property
+    def phase(self) -> str:
+        """Execution phase for the module: recon or exploit."""
+        return "recon"
+
+    @property
+    def safe_by_default(self) -> bool:
+        """Whether the module can run without explicit exploitation approval."""
+        return True
+
     @abc.abstractmethod
     async def execute(self, target: str, **kwargs) -> dict:
         """

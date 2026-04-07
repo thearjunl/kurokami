@@ -68,7 +68,7 @@ def create_scan_session(target: str):
 def _require_database_models():
     try:
         from .database import get_session, resolve_config_path
-        from .db import AIReasoningChain, Export, Finding, Session, Target
+        from .db import AIReasoningChain, Checkpoint, Exploit, Export, Finding, Session, Target
     except ModuleNotFoundError as exc:
         missing_module = exc.name or "database dependency"
         console.print(
@@ -77,7 +77,7 @@ def _require_database_models():
         console.print("Install the project dependencies, then retry this command.")
         sys.exit(1)
 
-    return get_session, resolve_config_path, AIReasoningChain, Export, Finding, Session, Target
+    return get_session, resolve_config_path, AIReasoningChain, Checkpoint, Exploit, Export, Finding, Session, Target
 
 
 def run_scan_pipeline(scan_session_id: int, scan_target: str, scope_path: str | None = None):
@@ -93,7 +93,19 @@ def run_scan_pipeline(scan_session_id: int, scan_target: str, scope_path: str | 
     )
 
 
-def _load_session_bundle(db, session_model, target_model, finding_model, reasoning_model, session_id: int):
+def run_resume_pipeline(scan_session_id: int, scan_target: str):
+    from .agentic_loop import run_agentic_loop
+
+    return asyncio.run(
+        run_agentic_loop(
+            session_id=scan_session_id,
+            target=scan_target,
+            resume_mode=True,
+        )
+    )
+
+
+def _load_session_bundle(db, session_model, target_model, finding_model, reasoning_model, checkpoint_model, exploit_model, session_id: int):
     session_record = db.get(session_model, int(session_id))
     if not session_record:
         return None
@@ -106,7 +118,17 @@ def _load_session_bundle(db, session_model, target_model, finding_model, reasoni
         .order_by(reasoning_model.id.asc())
         .all()
     )
-    return session_record, targets, findings, reasoning
+    checkpoints = (
+        db.query(checkpoint_model)
+        .filter(checkpoint_model.session_id == session_record.id)
+        .order_by(checkpoint_model.id.asc())
+        .all()
+    )
+    finding_ids = [finding.id for finding in findings]
+    exploits = []
+    if finding_ids:
+        exploits = db.query(exploit_model).filter(exploit_model.finding_id.in_(finding_ids)).order_by(exploit_model.id.asc()).all()
+    return session_record, targets, findings, reasoning, checkpoints, exploits
 
 @click.group()
 def cli():
@@ -142,6 +164,8 @@ def scan(target, scope):
     console.print(
         f"Pipeline status: [green]completed[/green] | Modules executed: [cyan]{result['modules_executed']}[/cyan] | "
         f"Findings recorded: [cyan]{result['findings_recorded']}[/cyan] | "
+        f"Risk: [cyan]{result['risk_level']}[/cyan] | "
+        f"Planner: [cyan]{result['planner_mode']}[/cyan] | "
         f"RAG: [cyan]{result['rag_status']}[/cyan] ({result['documents_indexed']} docs)"
     )
 
@@ -154,7 +178,7 @@ def history():
 def list():
     """List all previous sessions."""
     bootstrap_database()
-    get_session, _, _, _, _, Session, _ = _require_database_models()
+    get_session, _, _, _, _, _, _, Session, _ = _require_database_models()
 
     console.print("[bold blue]Session History:[/bold blue]")
     table = Table(title="KUROKAMI Sessions")
@@ -189,8 +213,7 @@ def list():
 def resume(session_id):
     """Resume an incomplete or past session."""
     bootstrap_database()
-    get_session, _, _, _, _, Session, _ = _require_database_models()
-    from .agentic_loop import run_agentic_loop
+    get_session, _, _, _, _, _, _, Session, _ = _require_database_models()
 
     with get_session() as db:
         session_record = db.get(Session, int(session_id))
@@ -202,15 +225,10 @@ def resume(session_id):
         scan_target = session_record.target
 
     console.print(f"Resuming session: [cyan]{session_id}[/cyan]")
-    result = asyncio.run(
-        run_agentic_loop(
-            session_id=int(session_id),
-            target=scan_target,
-        )
-    )
+    result = run_resume_pipeline(scan_session_id=int(session_id), scan_target=scan_target)
     console.print(
         f"Resumed pipeline completed | Modules executed: [cyan]{result['modules_executed']}[/cyan] | "
-        f"Findings recorded: [cyan]{result['findings_recorded']}[/cyan] | "
+        f"Findings recorded: [cyan]{result['findings_recorded']}[/cyan] | Risk: [cyan]{result['risk_level']}[/cyan] | "
         f"RAG: [cyan]{result['rag_status']}[/cyan] ({result['documents_indexed']} docs)"
     )
 
@@ -220,7 +238,7 @@ def resume(session_id):
 def diff(id1, id2):
     """Diff the findings between two specific sessions."""
     bootstrap_database()
-    get_session, _, _, _, Finding, Session, _ = _require_database_models()
+    get_session, _, _, _, _, _, Finding, Session, _ = _require_database_models()
     from .reporting import diff_findings
 
     with get_session() as db:
@@ -264,19 +282,19 @@ def diff(id1, id2):
 def export(session, format):
     """Export a session report to the specified format."""
     bootstrap_database()
-    get_session, resolve_config_path, AIReasoningChain, Export, Finding, Session, Target = _require_database_models()
+    get_session, resolve_config_path, AIReasoningChain, Checkpoint, Exploit, Export, Finding, Session, Target = _require_database_models()
     from .reporting import build_session_payload, write_export
 
     exports_dir = resolve_config_path("paths", "exports_dir", "data/exports")
     exports_dir.mkdir(parents=True, exist_ok=True)
 
     with get_session() as db:
-        bundle = _load_session_bundle(db, Session, Target, Finding, AIReasoningChain, int(session))
+        bundle = _load_session_bundle(db, Session, Target, Finding, AIReasoningChain, Checkpoint, Exploit, int(session))
         if not bundle:
             console.print(f"[bold red]Session {session} not found.[/]")
             sys.exit(1)
-        session_record, targets, findings, reasoning = bundle
-        payload = build_session_payload(session_record, targets, findings, reasoning)
+        session_record, targets, findings, reasoning, checkpoints, exploits = bundle
+        payload = build_session_payload(session_record, targets, findings, reasoning, checkpoints, exploits)
         export_path = exports_dir / f"session_{session_record.id}.{format.lower()}"
         write_export(format.lower(), payload, export_path)
 

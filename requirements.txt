@@ -4,3 +4,5 @@ sqlalchemy
 faiss-cpu
 numpy
 pytest
+build
+wheel

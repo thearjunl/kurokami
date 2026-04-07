@@ -9,9 +9,9 @@ if [[ $EUID -ne 0 ]]; then
    echo "[WARNING] Some dependencies might require sudo."
 fi
 
-echo "[*] Installing required system packages (nmap, nikto, whois, etc...)"
+echo "[*] Installing required system packages (nmap, nikto, whois, dnsenum, sslscan, etc...)"
 sudo apt-get update
-sudo apt-get install -y python3 python3-pip python3-venv nmap nikto whois dnsutils whatweb curl gobuster smbclient
+sudo apt-get install -y python3 python3-pip python3-venv nmap nikto whois dnsutils dnsenum whatweb curl gobuster smbclient sslscan
 
 echo "[*] Setting up Python virtual environment..."
 python3 -m venv venv

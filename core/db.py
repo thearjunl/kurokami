@@ -25,6 +25,8 @@ class Session(Base):
     end_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
     risk_level: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    current_stage: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    last_checkpoint: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     targets: Mapped[list["Target"]] = relationship(
         back_populates="session",
@@ -39,6 +41,10 @@ class Session(Base):
         cascade="all, delete-orphan",
     )
     exports: Mapped[list["Export"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
+    checkpoints: Mapped[list["Checkpoint"]] = relationship(
         back_populates="session",
         cascade="all, delete-orphan",
     )
@@ -117,3 +123,17 @@ class Export(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     session: Mapped["Session"] = relationship(back_populates="exports")
+
+
+class Checkpoint(Base):
+    __tablename__ = "checkpoints"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
+    stage: Mapped[str] = mapped_column(String(50), nullable=False)
+    module_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    state: Mapped[str] = mapped_column(String(50), nullable=False)
+    payload: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    session: Mapped["Session"] = relationship(back_populates="checkpoints")
