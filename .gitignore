@@ -205,3 +205,12 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# KUROKAMI runtime artifacts
+data/kurokami.db
+data/exports/*
+!data/exports/.gitkeep
+data/logs/*
+!data/logs/.gitkeep
+data/vector_store/*
+!data/vector_store/.gitkeep
