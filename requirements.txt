@@ -1,0 +1,6 @@
+click
+rich
+sqlalchemy
+faiss-cpu
+numpy
+pytest
