@@ -536,14 +536,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-## 📞 Support
 
-- 📧 **Email**: arjunl2026@mca.ajce.in
-- 🐛 **Issues**: [GitHub Issues](https://github.com/thearjunl/kurokami/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/thearjunl/kurokami/discussions)
-- 📖 **Documentation**: [Wiki](https://github.com/thearjunl/kurokami/wiki)
-
----
 
 <div align="center">
 
