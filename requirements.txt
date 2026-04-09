@@ -2,6 +2,7 @@ click
 rich
 pyfiglet
 sqlalchemy
+alembic
 faiss-cpu
 numpy
 pytest
