@@ -6,5 +6,7 @@ alembic
 faiss-cpu
 numpy
 pytest
+pytest-asyncio
+pytest-cov
 build
 wheel
