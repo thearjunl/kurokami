@@ -3,12 +3,17 @@ from datetime import datetime
 from pathlib import Path
 
 from .checkpoints import CheckpointManager
+from .config import config
 from .database import get_session, _load_config
 from .db import AIReasoningChain, Finding, ReasoningStage, Session, Target
 from .discovery import discover_modules
 from .exploitation import ExploitationPipeline
+from .logging_config import get_logger
 from .planner import Planner
 from .rag import SessionRAGStore
+from .rate_limiter import get_resource_monitor, TimeoutManager
+
+logger = get_logger("agentic_loop")
 
 SEVERITY_ORDER = {
     "info": 0,
@@ -31,6 +36,44 @@ class AgenticLoop:
         self.allow_exploits = self._allow_exploits()
 
     async def run(self) -> dict:
+        """Execute the agentic loop with timeout and resource monitoring."""
+        logger.info(
+            f"Starting agentic loop for session {self.session_id}",
+            extra={"session_id": self.session_id, "target": self.target, "resume_mode": self.resume_mode}
+        )
+        
+        # Start resource monitoring
+        monitor = get_resource_monitor()
+        monitor.start_scan(self.session_id)
+        
+        try:
+            # Run with timeout
+            result = await TimeoutManager.run_with_timeout(
+                self._run_internal(),
+                timeout=config.scan_timeout,
+                operation_name=f"Scan session {self.session_id}"
+            )
+            
+            # Record duration
+            duration = monitor.end_scan(self.session_id)
+            if duration:
+                logger.info(
+                    f"Scan completed in {duration:.2f}s",
+                    extra={"session_id": self.session_id, "duration": duration}
+                )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(
+                f"Scan failed: {str(e)}",
+                extra={"session_id": self.session_id, "target": self.target},
+                exc_info=True
+            )
+            monitor.end_scan(self.session_id)
+            raise
+
+    async def _run_internal(self) -> dict:
         self.checkpoints.record(stage="BOOTSTRAP", state="started", payload={"resume_mode": self.resume_mode})
         target_record = self._ensure_target_record()
         available_modules = discover_modules(str(Path(__file__).resolve().parent.parent / "modules"))
@@ -195,13 +238,28 @@ class AgenticLoop:
 
             self.checkpoints.record(stage=stage_name, state="started", module_name=module_name)
             try:
-                result = await module.execute(
-                    self.target,
-                    session_id=self.session_id,
-                    target_id=target_id,
-                    resume_mode=self.resume_mode,
+                logger.debug(
+                    f"Executing module {module_name}",
+                    extra={"session_id": self.session_id, "module_name": module_name}
+                )
+                
+                # Run module with timeout
+                result = await TimeoutManager.run_with_timeout(
+                    module.execute(
+                        self.target,
+                        session_id=self.session_id,
+                        target_id=target_id,
+                        resume_mode=self.resume_mode,
+                    ),
+                    timeout=config.module_timeout,
+                    operation_name=f"Module {module_name}"
                 )
             except Exception as exc:
+                logger.error(
+                    f"Module {module_name} failed: {str(exc)}",
+                    extra={"session_id": self.session_id, "module_name": module_name},
+                    exc_info=True
+                )
                 result = {
                     "status": "error",
                     "output": f"Module execution failed: {exc}",
