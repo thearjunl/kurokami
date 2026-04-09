@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  kurokami:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kurokami
+    environment:
+      - KUROKAMI_ENV=production
+      - DATABASE_URL=postgresql://kurokami:${DB_PASSWORD:-changeme}@postgres:5432/kurokami
+      - OLLAMA_HOST=http://ollama:11434
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+      - ALLOW_EXPLOITS=false
+      - RATE_LIMIT_ENABLED=true
+      - MAX_SCANS_PER_HOUR=10
+      - MAX_CONCURRENT_SCANS=3
+    volumes:
+      - ./data:/app/data
+      - ./kurokami.conf:/app/kurokami.conf:ro
+    depends_on:
+      - postgres
+      - ollama
+    networks:
+      - kurokami-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: kurokami-db
+    environment:
+      - POSTGRES_DB=kurokami
+      - POSTGRES_USER=kurokami
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-changeme}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - kurokami-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kurokami"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: kurokami-ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - kurokami-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres-data:
+  ollama-data:
+
+networks:
+  kurokami-network:
+    driver: bridge
