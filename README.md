@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔱 KUROKAMI
+#  KUROKAMI
 
 ### AI-Driven Penetration Testing Framework
 
